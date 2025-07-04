@@ -1,0 +1,77 @@
+name: Code Coverage
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+        
+    - name: Restore dependencies
+      run: dotnet restore
+      
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+      
+    - name: Test with Coverage
+      run: |
+        dotnet test --configuration Release --no-build \
+          /p:CollectCoverage=true \
+          /p:CoverletOutputFormat=cobertura \
+          /p:CoverletOutput=./coverage/ \
+          /p:Include="[SimpleLazyCache]*" \
+          /p:Exclude="[*.Tests]*"
+    
+    - name: Install ReportGenerator
+      run: dotnet tool install --global dotnet-reportgenerator-globaltool
+      
+    - name: Generate Coverage Report
+      run: |
+        reportgenerator \
+          -reports:"./coverage/coverage.cobertura.xml" \
+          -targetdir:"./coverage/report" \
+          -reporttypes:"Html;Badges;TextSummary" \
+          -title:"NetSimpleLazyCache Coverage Report"
+    
+    - name: Upload Coverage Reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: |
+          ./coverage/report/
+          ./coverage/coverage.cobertura.xml
+    
+    - name: Coverage Summary
+      run: |
+        echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
+        echo "| Metric | Coverage |" >> $GITHUB_STEP_SUMMARY
+        echo "|--------|----------|" >> $GITHUB_STEP_SUMMARY
+        if [ -f "./coverage/report/Summary.txt" ]; then
+          LINE_COV=$(grep "Line coverage:" ./coverage/report/Summary.txt | grep -o '[0-9]*\.[0-9]*%\|[0-9]*%')
+          BRANCH_COV=$(grep "Branch coverage:" ./coverage/report/Summary.txt | grep -o '[0-9]*\.[0-9]*%\|[0-9]*%')
+          METHOD_COV=$(grep "Method coverage:" ./coverage/report/Summary.txt | grep -o '[0-9]*\.[0-9]*%\|[0-9]*%')
+          echo "| Line Coverage | $LINE_COV |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch Coverage | $BRANCH_COV |" >> $GITHUB_STEP_SUMMARY  
+          echo "| Method Coverage | $METHOD_COV |" >> $GITHUB_STEP_SUMMARY
+        fi
+    
+    - name: Check Coverage Threshold
+      run: |
+        # Fail if line coverage is below 95%
+        dotnet test --configuration Release --no-build \
+          /p:CollectCoverage=true \
+          /p:Threshold=95 \
+          /p:ThresholdType=line \
+          /p:Include="[SimpleLazyCache]*" \
+          /p:Exclude="[*.Tests]*"

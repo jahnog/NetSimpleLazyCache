@@ -1,0 +1,92 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Generate Coverage Report",
+            "type": "shell",
+            "command": "./scripts/generate-coverage.sh",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Generate comprehensive code coverage report with HTML, Markdown (with Mermaid), XML, and badge formats"
+        },
+        {
+            "label": "Quick Coverage Test",
+            "type": "shell",
+            "command": "./scripts/quick-coverage.sh",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": true
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Run quick coverage test without generating reports"
+        },
+        {
+            "label": "Test with Coverage (dotnet)",
+            "type": "shell",
+            "command": "dotnet",
+            "args": [
+                "test",
+                "--configuration",
+                "Release",
+                "/p:CollectCoverage=true",
+                "/p:CoverletOutputFormat=cobertura",
+                "/p:CoverletOutput=./coverage/",
+                "/p:Include=[SimpleLazyCache]*",
+                "/p:Exclude=[*.Tests]*"
+            ],
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": true
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": "$msCompile",
+            "detail": "Run tests with basic coverage collection"
+        },
+        {
+            "label": "Open Coverage Report",
+            "type": "shell",
+            "command": "code",
+            "args": ["./coverage/index.html"],
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "never",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": false
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Open the generated coverage report in VS Code"
+        }
+    ]
+}
