@@ -87,6 +87,44 @@
             },
             "problemMatcher": [],
             "detail": "Open the generated coverage report in VS Code"
+        },
+        {
+            "label": "Generate GitHub Actions Coverage",
+            "type": "shell",
+            "command": "./scripts/generate-github-actions-coverage.sh",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": true
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Generate coverage reports using GitHub Actions compatible structure"
+        },
+        {
+            "label": "Test GitHub Pages Setup",
+            "type": "shell",
+            "command": "./scripts/test-github-pages-setup.sh",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": true
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Test the GitHub Pages deployment setup"
         }
     ]
 }

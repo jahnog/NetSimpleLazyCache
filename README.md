@@ -1,6 +1,6 @@
 # NetSimpleLazyCache
 
-![Line Coverage](badge_linecoverage.svg) ![Branch Coverage](badge_branchcoverage.svg) ![Method Coverage](badge_methodcoverage.svg)
+[![Line Coverage](badge_linecoverage.svg)](https://jahnog.github.io/NetSimpleLazyCache/) [![Branch Coverage](badge_branchcoverage.svg)](https://jahnog.github.io/NetSimpleLazyCache/) [![Method Coverage](badge_methodcoverage.svg)](https://jahnog.github.io/NetSimpleLazyCache/)
 
 A high-performance, thread-safe caching solution for .NET that prevents cache stampede scenarios using lazy evaluation and concurrent dictionary patterns.
 
@@ -52,6 +52,20 @@ dotnet test --configuration Release /p:CollectCoverage=true /p:CoverletOutputFor
 **VS Code Users**: Use the Command Palette (`Ctrl+Shift+P`) and run:
 - `Tasks: Run Task` → `Generate Coverage Report`
 - `Tasks: Run Task` → `Quick Coverage Test`
+
+### 🌐 Online Coverage Reports
+
+View comprehensive coverage reports online at: **https://jahnog.github.io/NetSimpleLazyCache/**
+
+The GitHub Pages site includes:
+- 📊 **Interactive HTML Reports**: Line-by-line coverage analysis
+- 📈 **Visual Dashboards**: Coverage metrics and trends  
+- 📝 **Markdown Reports**: Text-based summaries
+- 🏆 **Coverage Badges**: Always up-to-date status indicators
+
+Reports are automatically updated on every push to the main branch.
+
+### 📁 Local Coverage Reports
 
 Coverage reports are generated in the `./coverage/` directory with multiple formats:
 - **HTML Report**: `./coverage/reports/html/index.html` (Interactive browser report)

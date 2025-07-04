@@ -133,11 +133,11 @@ jobs:
         name: coverage-report
         path: |
           ./coverage/report/
-          ./coverage/coverage.cobertura.xml
+        retention-days: 30
     
     - name: Coverage Summary
       run: |
-        echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
+        echo "## 📊 Coverage Summary" >> $GITHUB_STEP_SUMMARY
         echo "| Metric | Coverage |" >> $GITHUB_STEP_SUMMARY
         echo "|--------|----------|" >> $GITHUB_STEP_SUMMARY
         
@@ -150,6 +150,12 @@ jobs:
           echo "| Line Coverage | $LINE_COV |" >> $GITHUB_STEP_SUMMARY
           echo "| Branch Coverage | $BRANCH_COV |" >> $GITHUB_STEP_SUMMARY  
           echo "| Method Coverage | $METHOD_COV |" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 View Coverage Reports" >> $GITHUB_STEP_SUMMARY
+          echo "- 📁 **Artifacts**: Download detailed reports from the artifacts section below" >> $GITHUB_STEP_SUMMARY
+          echo "- 🌐 **GitHub Pages**: View online at https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/" >> $GITHUB_STEP_SUMMARY
+          echo "- 🏆 **Badges**: Updated in repository root" >> $GITHUB_STEP_SUMMARY
           
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Detailed Coverage Information" >> $GITHUB_STEP_SUMMARY
