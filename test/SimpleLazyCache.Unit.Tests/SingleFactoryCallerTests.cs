@@ -377,6 +377,71 @@ public class SingleFactoryCallerTests
     }
 
     #endregion
+
+    #region Exception Handling Problem Demonstration
+
+    [Fact]
+    public async Task GetOrAddAsync_ConcurrentRequestsWithFactoryException_AllReceiveSameException()
+    {
+        // This test demonstrates that concurrent requests all receive the same exception
+        // which is actually the correct behavior for a cache-stampede prevention mechanism
+        
+        var factoryCallCount = 0;
+        const string key = "exception-demonstration-key";
+
+        Func<Task<TestData>> faultyFactory = async () =>
+        {
+            Interlocked.Increment(ref factoryCallCount);
+            await Task.Delay(100); // Simulate some work
+            throw new InvalidOperationException("Factory intentionally failed");
+        };
+
+        // Start multiple concurrent requests
+        var task1 = _singleFactoryCaller.GetOrAddAsync(key, faultyFactory);
+        var task2 = _singleFactoryCaller.GetOrAddAsync(key, faultyFactory);
+        var task3 = _singleFactoryCaller.GetOrAddAsync(key, faultyFactory);
+
+        // All should fail with the same exception
+        await Assert.ThrowsAsync<InvalidOperationException>(() => task1);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => task2);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => task3);
+
+        // The factory should only be called once (this prevents cache stampede)
+        Assert.Equal(1, factoryCallCount);
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_ExceptionThenSuccess_WorksCorrectly()
+    {
+        // This test demonstrates that after an exception, subsequent calls work correctly
+        
+        var factoryCallCount = 0;
+        const string key = "exception-then-success-key";
+
+        // First call should fail
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _singleFactoryCaller.GetOrAddAsync(key, async () =>
+            {
+                Interlocked.Increment(ref factoryCallCount);
+                await Task.Delay(50);
+                throw new InvalidOperationException("First call failed");
+            }));
+
+        // Second call should succeed
+        var result = await _singleFactoryCaller.GetOrAddAsync(key, async () =>
+        {
+            Interlocked.Increment(ref factoryCallCount);
+            await Task.Delay(50);
+            return new TestData { Id = 1, Name = "Success after failure" };
+        });
+
+        Assert.NotNull(result);
+        Assert.Equal(1, result.Id);
+        Assert.Equal("Success after failure", result.Name);
+        Assert.Equal(2, factoryCallCount); // Both factory calls should have executed
+    }
+
+    #endregion
 }
 
 // Test data class
