@@ -17,17 +17,22 @@ public class SingleFactoryCaller<T> where T : class
 
         var lazyValue = _pendingTasks.GetOrAdd(key, k =>
             new Lazy<Task<T>>(
-                () => valueFactory()
+                async () =>
+                {
+                    try
+                    {
+                        return await valueFactory();
+                    }
+                    finally
+                    {
+                        // Remove the entry only after the task completes (success or failure)
+                        // This ensures all concurrent waiters get the same result before cleanup
+                        _pendingTasks.TryRemove(key, out _);
+                    }
+                }
             )
         );
 
-        try
-        {
-            return await lazyValue.Value;
-        }
-        finally
-        {
-            _pendingTasks.TryRemove(key, out _);
-        }
+        return await lazyValue.Value;
     }
 }

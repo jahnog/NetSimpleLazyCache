@@ -378,6 +378,168 @@ public class SingleFactoryCallerTests
 
     #endregion
 
+    #region Exception Handling Analysis Tests
+
+    [Fact]
+    public async Task ExceptionProblem1_ConcurrentExceptionThenImmediateRetry_RaceCondition()
+    {
+        // This test demonstrates a potential race condition when an exception occurs
+        // and immediately after, another request comes in for the same key
+        
+        var cache = new SingleFactoryCaller<TestData>();
+        var firstCallStarted = new TaskCompletionSource<bool>();
+        var proceedWithException = new TaskCompletionSource<bool>();
+        
+        var key = "race-condition-key";
+        
+        // Start a request that will fail
+        var failingTask = Task.Run(async () =>
+        {
+            return await cache.GetOrAddAsync(key, async () =>
+            {
+                firstCallStarted.SetResult(true);
+                await proceedWithException.Task; // Wait for signal
+                throw new InvalidOperationException("Simulated failure");
+            });
+        });
+        
+        // Wait for the first call to start
+        await firstCallStarted.Task;
+        
+        // Now start a second request that should succeed
+        var successTask = Task.Run(async () =>
+        {
+            // Small delay to ensure timing
+            await Task.Delay(10);
+            return await cache.GetOrAddAsync(key, () => Task.FromResult(new TestData { Id = 1, Name = "success" }));
+        });
+        
+        // Allow the first request to fail
+        proceedWithException.SetResult(true);
+        
+        // The failing task should throw
+        await Assert.ThrowsAsync<InvalidOperationException>(() => failingTask);
+        
+        // The success task should complete successfully
+        var result = await successTask;
+        Assert.Equal("success", result.Name);
+    }
+    
+    [Fact]
+    public async Task ExceptionProblem2_FactoryThrowsSynchronously_HandledCorrectly()
+    {
+        // This demonstrates what happens when the factory itself throws synchronously
+        // before returning a Task
+        
+        var key = "sync-exception-key";
+        
+        // Factory that throws immediately (not in a Task)
+        Func<Task<TestData>> faultyFactory = () =>
+        {
+            throw new InvalidOperationException("Synchronous exception in factory");
+        };
+        
+        // This should still propagate the exception correctly
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _singleFactoryCaller.GetOrAddAsync(key, faultyFactory));
+    }
+    
+    [Fact]
+    public async Task ExceptionProblem3_TaskFactoryExceptionInLazy_OnlyCalledOnce()
+    {
+        // This shows what happens when the Lazy<Task<T>> itself throws
+        // during evaluation. We need true concurrency at the GetOrAdd level.
+        
+        var key = "lazy-exception-key";
+        var factoryCallCount = 0;
+        var factoryEntered = new TaskCompletionSource<bool>();
+        var continueFactory = new TaskCompletionSource<bool>();
+        
+        Func<Task<TestData>> faultyFactory = async () =>
+        {
+            Interlocked.Increment(ref factoryCallCount);
+            factoryEntered.SetResult(true);
+            await continueFactory.Task; // Block until we say continue
+            throw new InvalidOperationException("Exception during Lazy evaluation");
+        };
+        
+        // Start first request
+        var task1 = _singleFactoryCaller.GetOrAddAsync(key, faultyFactory);
+        
+        // Wait for factory to start executing
+        await factoryEntered.Task;
+        
+        // Start second request while first is blocked in factory
+        var task2 = _singleFactoryCaller.GetOrAddAsync(key, faultyFactory);
+        
+        // Now let the factory complete and fail
+        continueFactory.SetResult(true);
+        
+        // Both should fail
+        await Assert.ThrowsAsync<InvalidOperationException>(() => task1);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => task2);
+        
+        // Factory should only be called once due to Lazy<T>
+        Assert.Equal(1, factoryCallCount);
+    }
+    
+    [Fact]
+    public async Task ExceptionProblem4_CancellationInFactory_CleansUpProperly()
+    {
+        // This tests behavior with cancellation tokens in the factory
+        
+        var cache = new SingleFactoryCaller<TestData>();
+        var key = "cancellation-test";
+        
+        using var cts = new CancellationTokenSource();
+        cts.CancelAfter(100); // Cancel after 100ms
+        
+        await Assert.ThrowsAsync<TaskCanceledException>(() =>
+            cache.GetOrAddAsync(key, async () =>
+            {
+                await Task.Delay(1000, cts.Token); // This will be cancelled
+                return new TestData { Id = 1, Name = "success" };
+            }));
+        
+        // Verify cleanup happened by accessing internal state
+        var pendingTasksField = typeof(SingleFactoryCaller<TestData>)
+            .GetField("_pendingTasks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        
+        var pendingTasks = (ConcurrentDictionary<string, Lazy<Task<TestData>>>)pendingTasksField!.GetValue(cache)!;
+        Assert.Empty(pendingTasks);
+    }
+    
+    [Fact]
+    public async Task ExceptionProblem5_UnobservedTaskException_DoesNotPreventCleanup()
+    {
+        // This test verifies that unobserved task exceptions don't prevent cleanup
+        
+        var cache = new SingleFactoryCaller<TestData>();
+        var key = "unobserved-exception-key";
+        var factoryExecuted = false;
+        
+        // Create a task that will have an unobserved exception
+        _ = cache.GetOrAddAsync(key, async () =>
+        {
+            factoryExecuted = true;
+            await Task.Delay(10);
+            throw new InvalidOperationException("Unobserved exception");
+        });
+        
+        // Wait a bit for the factory to execute
+        await Task.Delay(200);
+        Assert.True(factoryExecuted);
+        
+        // Verify the cache was cleaned up
+        var pendingTasksField = typeof(SingleFactoryCaller<TestData>)
+            .GetField("_pendingTasks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        
+        var pendingTasks = (ConcurrentDictionary<string, Lazy<Task<TestData>>>)pendingTasksField!.GetValue(cache)!;
+        Assert.Empty(pendingTasks);
+    }
+
+    #endregion
+
     #region Exception Handling Problem Demonstration
 
     [Fact]
@@ -439,6 +601,76 @@ public class SingleFactoryCallerTests
         Assert.Equal(1, result.Id);
         Assert.Equal("Success after failure", result.Name);
         Assert.Equal(2, factoryCallCount); // Both factory calls should have executed
+    }
+
+    #endregion
+
+    #region Critical Problem Demonstration
+
+    [Fact]
+    public async Task CriticalProblem_LazyTaskExceptionNotPropagatedToAllWaiters()
+    {
+        // This test demonstrates a critical issue: when a Lazy<Task<T>> fails,
+        // concurrent waiters should all receive the same exception, but there's
+        // a potential issue with the cleanup timing
+        
+        var cache = new SingleFactoryCaller<TestData>();
+        var key = "critical-exception-key";
+        var factoryStarted = new TaskCompletionSource<bool>();
+        var allowFactoryToFail = new TaskCompletionSource<bool>();
+        var factoryCallCount = 0;
+        
+        Func<Task<TestData>> faultyFactory = async () =>
+        {
+            Interlocked.Increment(ref factoryCallCount);
+            factoryStarted.SetResult(true);
+            await allowFactoryToFail.Task;
+            throw new InvalidOperationException("Critical test exception");
+        };
+        
+        // Start the first request
+        var task1 = cache.GetOrAddAsync(key, faultyFactory);
+        
+        // Wait for factory to start
+        await factoryStarted.Task;
+        
+        // Start second request while first is still running
+        var task2 = cache.GetOrAddAsync(key, faultyFactory);
+        
+        // Allow factory to fail
+        allowFactoryToFail.SetResult(true);
+        
+        // Both tasks should fail with the same exception
+        var ex1 = await Assert.ThrowsAsync<InvalidOperationException>(() => task1);
+        var ex2 = await Assert.ThrowsAsync<InvalidOperationException>(() => task2);
+        
+        Assert.Equal("Critical test exception", ex1.Message);
+        Assert.Equal("Critical test exception", ex2.Message);
+        Assert.Equal(1, factoryCallCount); // Factory should only be called once
+    }
+    
+    [Fact] 
+    public async Task EdgeCase_VeryFastExceptionVsCleanup()
+    {
+        // This test tries to find race conditions between exception propagation and cleanup
+        var cache = new SingleFactoryCaller<TestData>();
+        
+        for (int i = 0; i < 100; i++)
+        {
+            var key = $"fast-exception-{i}";
+            
+            // Very fast failing factory
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                cache.GetOrAddAsync(key, () => 
+                    Task.FromException<TestData>(new InvalidOperationException($"Fast exception {i}"))));
+            
+            // Verify cleanup
+            var pendingTasksField = typeof(SingleFactoryCaller<TestData>)
+                .GetField("_pendingTasks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var pendingTasks = (ConcurrentDictionary<string, Lazy<Task<TestData>>>)pendingTasksField!.GetValue(cache)!;
+            
+            Assert.Empty(pendingTasks);
+        }
     }
 
     #endregion
