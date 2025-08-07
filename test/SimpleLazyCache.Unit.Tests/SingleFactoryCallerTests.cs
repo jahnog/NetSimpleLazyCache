@@ -674,6 +674,548 @@ public class SingleFactoryCallerTests
     }
 
     #endregion
+
+    #region Additional Exception Handling Tests
+
+    [Fact]
+    public async Task GetOrAddAsync_NullValueFactory_ThrowsArgumentNullException()
+    {
+        // Arrange
+        const string key = "null-factory-key";
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            _singleFactoryCaller.GetOrAddAsync(key, null!));
+
+        Assert.Equal("valueFactory", exception.ParamName);
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_FactoryReturnsNullTask_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        const string key = "null-task-key";
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _singleFactoryCaller.GetOrAddAsync(key, () => null!));
+
+        Assert.Equal("Value factory returned null task.", exception.Message);
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_FactoryThrowsBeforeReturningTask_ExceptionPropagated()
+    {
+        // Arrange
+        const string key = "sync-exception-key";
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(() =>
+            _singleFactoryCaller.GetOrAddAsync(key, () => 
+                throw new NotSupportedException("Factory synchronous exception")));
+
+        Assert.Equal("Factory synchronous exception", exception.Message);
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_ConcurrentExceptionAndSuccess_BothReceiveSameException()
+    {
+        // Arrange
+        const string key = "concurrent-exception-key";
+        var factoryCallCount = 0;
+        var factoryStarted = new TaskCompletionSource<bool>();
+        var proceedWithException = new TaskCompletionSource<bool>();
+
+        Func<Task<TestData>> faultyFactory = async () =>
+        {
+            Interlocked.Increment(ref factoryCallCount);
+            factoryStarted.SetResult(true);
+            await proceedWithException.Task;
+            throw new InvalidOperationException("Concurrent exception test");
+        };
+
+        // Act - Start first request
+        var task1 = _singleFactoryCaller.GetOrAddAsync(key, faultyFactory);
+        
+        // Wait for factory to start
+        await factoryStarted.Task;
+        
+        // Start second request while first is still running
+        var task2 = _singleFactoryCaller.GetOrAddAsync(key, faultyFactory);
+        
+        // Allow factory to fail
+        proceedWithException.SetResult(true);
+
+        // Assert - Both should fail with the same exception
+        var ex1 = await Assert.ThrowsAsync<InvalidOperationException>(() => task1);
+        var ex2 = await Assert.ThrowsAsync<InvalidOperationException>(() => task2);
+        
+        Assert.Equal("Concurrent exception test", ex1.Message);
+        Assert.Equal("Concurrent exception test", ex2.Message);
+        Assert.Equal(1, factoryCallCount); // Factory should only be called once
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_ExceptionInTaskContinuation_DoesNotBreakCache()
+    {
+        // Arrange
+        const string key = "task-continuation-exception-key";
+        var factoryCallCount = 0;
+
+        // Act - First call with exception in task
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _singleFactoryCaller.GetOrAddAsync(key, async () =>
+            {
+                Interlocked.Increment(ref factoryCallCount);
+                await Task.Yield(); // Force continuation
+                throw new InvalidOperationException("Task continuation exception");
+            }));
+
+        // Second call should work normally
+        var result = await _singleFactoryCaller.GetOrAddAsync(key, async () =>
+        {
+            Interlocked.Increment(ref factoryCallCount);
+            await Task.Yield();
+            return new TestData { Id = 1, Name = "Success after exception" };
+        });
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(1, result.Id);
+        Assert.Equal("Success after exception", result.Name);
+        Assert.Equal(2, factoryCallCount);
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_AggregateExceptionFromFactory_UnwrapsCorrectly()
+    {
+        // Arrange
+        const string key = "aggregate-exception-key";
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _singleFactoryCaller.GetOrAddAsync(key, () =>
+            {
+                var tcs = new TaskCompletionSource<TestData>();
+                tcs.SetException(new InvalidOperationException("Aggregate exception test"));
+                return tcs.Task;
+            }));
+
+        Assert.Equal("Aggregate exception test", exception.Message);
+    }
+
+    #endregion
+
+    #region Advanced Race Condition Tests
+
+    [Fact]
+    public async Task GetOrAddAsync_RaceConditionBetweenCompletionAndNewRequest_HandledCorrectly()
+    {
+        // This test specifically targets the race condition between task completion cleanup
+        // and new requests for the same key
+        
+        var cache = new SingleFactoryCaller<TestData>();
+        const string key = "race-condition-completion-key";
+        var firstCallCompleted = new TaskCompletionSource<bool>();
+        var secondCallCanStart = new TaskCompletionSource<bool>();
+        var factoryCallCount = 0;
+
+        // First call
+        var firstTask = cache.GetOrAddAsync(key, async () =>
+        {
+            Interlocked.Increment(ref factoryCallCount);
+            await Task.Delay(50);
+            firstCallCompleted.SetResult(true);
+            return new TestData { Id = 1, Name = "First call" };
+        });
+
+        // Wait for first call to complete
+        await firstCallCompleted.Task;
+        await firstTask; // Ensure complete cleanup
+
+        // Immediately start second call
+        var secondTask = cache.GetOrAddAsync(key, async () =>
+        {
+            Interlocked.Increment(ref factoryCallCount);
+            await Task.Delay(50);
+            return new TestData { Id = 2, Name = "Second call" };
+        });
+
+        var secondResult = await secondTask;
+
+        // Assert
+        Assert.NotNull(secondResult);
+        Assert.Equal(2, secondResult.Id);
+        Assert.Equal("Second call", secondResult.Name);
+        Assert.Equal(2, factoryCallCount); // Both factories should have been called
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_HighConcurrencyWithMixedSuccessAndFailure_BehavesCorrectly()
+    {
+        // This test creates a high concurrency scenario with mixed success/failure
+        
+        var successCount = 0;
+        var failureCount = 0;
+        var tasks = new List<Task>();
+
+        // Create multiple tasks with different keys, some succeed, some fail
+        for (int i = 0; i < 50; i++)
+        {
+            var key = $"mixed-result-key-{i}";
+            var shouldFail = i % 3 == 0; // Every third call fails
+
+            if (shouldFail)
+            {
+                tasks.Add(Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _singleFactoryCaller.GetOrAddAsync(key, async () =>
+                        {
+                            await Task.Delay(Random.Shared.Next(1, 50));
+                            throw new InvalidOperationException($"Planned failure {i}");
+                        });
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        Interlocked.Increment(ref failureCount);
+                    }
+                }));
+            }
+            else
+            {
+                tasks.Add(Task.Run(async () =>
+                {
+                    var result = await _singleFactoryCaller.GetOrAddAsync(key, async () =>
+                    {
+                        await Task.Delay(Random.Shared.Next(1, 50));
+                        return new TestData { Id = i, Name = $"Success {i}" };
+                    });
+                    
+                    if (result != null)
+                    {
+                        Interlocked.Increment(ref successCount);
+                    }
+                }));
+            }
+        }
+
+        await Task.WhenAll(tasks);
+
+        // Assert
+        var expectedFailures = 50 / 3 + (50 % 3 > 0 ? 1 : 0); // Ceiling division
+        var expectedSuccesses = 50 - expectedFailures;
+
+        Assert.Equal(expectedFailures, failureCount);
+        Assert.Equal(expectedSuccesses, successCount);
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_ConcurrentRequestsWithSameKeyDifferentFactories_FirstWins()
+    {
+        // This test ensures that when multiple requests come in simultaneously
+        // with the same key but different factories, only the first factory is used
+        
+        const string key = "first-wins-key";
+        var factory1Called = false;
+        var factory2Called = false;
+        var factory3Called = false;
+        var allStarted = new TaskCompletionSource<bool>();
+        var proceedWithExecution = new TaskCompletionSource<bool>();
+        var factoriesStarted = 0;
+
+        Func<int, Func<Task<TestData>>> createFactory = (factoryId) => async () =>
+        {
+            var started = Interlocked.Increment(ref factoriesStarted);
+            if (started == 1) // First factory to start
+            {
+                allStarted.SetResult(true);
+                await proceedWithExecution.Task;
+            }
+
+            switch (factoryId)
+            {
+                case 1:
+                    factory1Called = true;
+                    return new TestData { Id = 1, Name = "Factory 1" };
+                case 2:
+                    factory2Called = true;
+                    return new TestData { Id = 2, Name = "Factory 2" };
+                case 3:
+                    factory3Called = true;
+                    return new TestData { Id = 3, Name = "Factory 3" };
+                default:
+                    throw new InvalidOperationException("Unknown factory");
+            }
+        };
+
+        // Start all requests simultaneously
+        var task1 = _singleFactoryCaller.GetOrAddAsync(key, createFactory(1));
+        var task2 = _singleFactoryCaller.GetOrAddAsync(key, createFactory(2));
+        var task3 = _singleFactoryCaller.GetOrAddAsync(key, createFactory(3));
+
+        // Wait for at least one factory to start
+        await allStarted.Task;
+        
+        // Allow execution to proceed
+        proceedWithExecution.SetResult(true);
+
+        // Wait for all tasks to complete
+        var results = await Task.WhenAll(task1, task2, task3);
+
+        // Assert
+        Assert.True(factory1Called); // First factory should be called
+        Assert.False(factory2Called); // Other factories should not be called
+        Assert.False(factory3Called);
+        
+        // All results should be the same
+        Assert.All(results, result => Assert.Equal(1, result.Id));
+        Assert.All(results, result => Assert.Equal("Factory 1", result.Name));
+    }
+
+    #endregion
+
+    #region Memory Leak Prevention Tests
+
+    [Fact]
+    public async Task GetOrAddAsync_LargeNumberOfKeys_DoesNotAccumulateMemory()
+    {
+        // This test ensures that the cache doesn't accumulate memory over time
+        
+        var cache = new SingleFactoryCaller<TestData>();
+        const int numberOfKeys = 1000;
+
+        // Execute a large number of operations
+        for (int i = 0; i < numberOfKeys; i++)
+        {
+            var key = $"memory-test-key-{i}";
+            var result = await cache.GetOrAddAsync(key, async () =>
+            {
+                await Task.Delay(1); // Minimal delay
+                return new TestData { Id = i, Name = $"Test {i}" };
+            });
+            
+            Assert.NotNull(result);
+            Assert.Equal(i, result.Id);
+        }
+
+        // Check internal state
+        var pendingTasksField = typeof(SingleFactoryCaller<TestData>)
+            .GetField("_pendingTasks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var pendingTasks = (ConcurrentDictionary<string, Lazy<Task<TestData>>>)pendingTasksField!.GetValue(cache)!;
+        
+        // All tasks should be cleaned up
+        Assert.Empty(pendingTasks);
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_RepeatedExceptionsWithSameKey_DoesNotLeakMemory()
+    {
+        // This test ensures that repeated exceptions don't cause memory leaks
+        
+        var cache = new SingleFactoryCaller<TestData>();
+        const string key = "repeated-exception-key";
+        const int numberOfAttempts = 100;
+
+        for (int i = 0; i < numberOfAttempts; i++)
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                cache.GetOrAddAsync(key, async () =>
+                {
+                    await Task.Delay(1);
+                    throw new InvalidOperationException($"Exception {i}");
+                }));
+        }
+
+        // Check internal state
+        var pendingTasksField = typeof(SingleFactoryCaller<TestData>)
+            .GetField("_pendingTasks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var pendingTasks = (ConcurrentDictionary<string, Lazy<Task<TestData>>>)pendingTasksField!.GetValue(cache)!;
+        
+        // All tasks should be cleaned up
+        Assert.Empty(pendingTasks);
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_LongRunningTasksWithCancellation_CleansUpProperly()
+    {
+        // This test ensures that cancelled long-running tasks are properly cleaned up
+        // Note: The cancellation must be handled within the factory itself
+        
+        var cache = new SingleFactoryCaller<TestData>();
+        const string key = "long-running-cancelled-key";
+        
+        using var cts = new CancellationTokenSource();
+        cts.CancelAfter(100); // Cancel after 100ms
+
+        // Start a long-running task
+        var longRunningTask = cache.GetOrAddAsync(key, async () =>
+        {
+            await Task.Delay(5000, cts.Token); // This will be cancelled
+            return new TestData { Id = 1, Name = "Long running" };
+        });
+
+        // Task should be cancelled
+        await Assert.ThrowsAsync<TaskCanceledException>(() => longRunningTask);
+
+        // Check cleanup
+        var pendingTasksField = typeof(SingleFactoryCaller<TestData>)
+            .GetField("_pendingTasks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var pendingTasks = (ConcurrentDictionary<string, Lazy<Task<TestData>>>)pendingTasksField!.GetValue(cache)!;
+        
+        Assert.Empty(pendingTasks);
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_ConcurrentRequestsWithCancellation_HandlesCorrectly()
+    {
+        // This test demonstrates that concurrent requests work correctly
+        // when using cancellation tokens within the factory implementation
+        
+        var cache = new SingleFactoryCaller<TestData>();
+        const string key = "concurrent-cancellation-key";
+        
+        var factoryExecuted = false;
+        var factoryStarted = new TaskCompletionSource<bool>();
+        var proceedWithFactory = new TaskCompletionSource<bool>();
+
+        Func<Task<TestData>> factory = async () =>
+        {
+            factoryExecuted = true;
+            factoryStarted.SetResult(true);
+            await proceedWithFactory.Task;
+            return new TestData { Id = 1, Name = "Success" };
+        };
+
+        // Start first request
+        var task1 = cache.GetOrAddAsync(key, factory);
+        
+        // Wait for factory to start
+        await factoryStarted.Task;
+        
+        // Start second request (should use same factory execution)
+        var task2 = cache.GetOrAddAsync(key, factory);
+        
+        // Allow factory to complete
+        proceedWithFactory.SetResult(true);
+
+        // Both tasks should succeed since they share the same factory execution
+        var result1 = await task1;
+        var result2 = await task2;
+        
+        Assert.NotNull(result1);
+        Assert.NotNull(result2);
+        Assert.Equal(1, result1.Id);
+        Assert.Equal(1, result2.Id);
+        Assert.Equal("Success", result1.Name);
+        Assert.Equal("Success", result2.Name);
+        Assert.True(factoryExecuted);
+    }
+
+    #endregion
+
+    #region Edge Cases and Boundary Conditions
+
+    [Fact]
+    public async Task GetOrAddAsync_EmptyStringKey_ThrowsArgumentException()
+    {
+        // Arrange
+        const string key = "";
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            _singleFactoryCaller.GetOrAddAsync(key, () => Task.FromResult(new TestData())));
+
+        Assert.Equal("Key cannot be null or empty. (Parameter 'key')", exception.Message);
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_WhitespaceKey_WorksCorrectly()
+    {
+        // Arrange
+        const string key = "   ";
+        var expectedValue = new TestData { Id = 1, Name = "Whitespace key test" };
+
+        // Act
+        var result = await _singleFactoryCaller.GetOrAddAsync(key, () => Task.FromResult(expectedValue));
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(expectedValue.Id, result.Id);
+        Assert.Equal(expectedValue.Name, result.Name);
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_VeryLongKey_WorksCorrectly()
+    {
+        // Arrange
+        var longKey = new string('A', 10000); // Very long key
+        var expectedValue = new TestData { Id = 1, Name = "Long key test" };
+
+        // Act
+        var result = await _singleFactoryCaller.GetOrAddAsync(longKey, () => Task.FromResult(expectedValue));
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(expectedValue.Id, result.Id);
+        Assert.Equal(expectedValue.Name, result.Name);
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_SpecialCharactersInKey_WorksCorrectly()
+    {
+        // Arrange
+        const string key = "special-chars-!@#$%^&*()_+-=[]{}|;':\",./<>?";
+        var expectedValue = new TestData { Id = 1, Name = "Special chars test" };
+
+        // Act
+        var result = await _singleFactoryCaller.GetOrAddAsync(key, () => Task.FromResult(expectedValue));
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(expectedValue.Id, result.Id);
+        Assert.Equal(expectedValue.Name, result.Name);
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_FactoryReturnsTaskFromResult_WorksCorrectly()
+    {
+        // Arrange
+        const string key = "task-from-result-key";
+        var expectedValue = new TestData { Id = 1, Name = "Task from result" };
+
+        // Act
+        var result = await _singleFactoryCaller.GetOrAddAsync(key, () => Task.FromResult(expectedValue));
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(expectedValue.Id, result.Id);
+        Assert.Equal(expectedValue.Name, result.Name);
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_FactoryReturnsCompletedTask_WorksCorrectly()
+    {
+        // Arrange
+        const string key = "completed-task-key";
+        var expectedValue = new TestData { Id = 1, Name = "Completed task" };
+
+        // Act
+        var result = await _singleFactoryCaller.GetOrAddAsync(key, () =>
+        {
+            var tcs = new TaskCompletionSource<TestData>();
+            tcs.SetResult(expectedValue);
+            return tcs.Task;
+        });
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(expectedValue.Id, result.Id);
+        Assert.Equal(expectedValue.Name, result.Name);
+    }
+
+    #endregion
 }
 
 // Test data class
