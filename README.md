@@ -1,108 +1,82 @@
 # NetSimpleLazyCache
 
-[![Line Coverage](badge_linecoverage.svg)](https://jahnog.github.io/NetSimpleLazyCache/) [![Branch Coverage](badge_branchcoverage.svg)](https://jahnog.github.io/NetSimpleLazyCache/) [![Method Coverage](badge_methodcoverage.svg)](https://jahnog.github.io/NetSimpleLazyCache/)
+`SingleFactoryCaller<T>` shares one in-flight factory call among concurrent callers of the same key. The type stores that call in a dictionary guarded by a lock. When the call finishes, the entry is removed, and a later call runs the factory again. A cancellation token from one caller does not cancel the shared factory. `T` is a reference type.
 
-A high-performance, thread-safe caching solution for .NET that prevents cache stampede scenarios using lazy evaluation and concurrent dictionary patterns.
+## Build
 
-## Features
-
-- **Thread-Safe**: Built on `ConcurrentDictionary` for safe concurrent access
-- **Cache Stampede Prevention**: Multiple concurrent requests for the same key only execute the factory once
-- **Memory Leak Prevention**: Automatic cleanup of completed tasks
-- **Generic Support**: Works with any reference type
-- **High Performance**: Optimized for high-concurrency scenarios
-- **Comprehensive Testing**: Extensive unit tests covering race conditions, memory leaks, and edge cases
+```bash
+dotnet build
+```
 
 ## Usage
 
 ```csharp
 var cache = new SingleFactoryCaller<MyDataType>();
 
-// Multiple concurrent calls with the same key will only execute the factory once
 var result = await cache.GetOrAddAsync("my-key", async () =>
 {
-    // Expensive operation here
     return await FetchDataFromDatabase();
 });
 ```
 
-## Code Coverage
-
-This project maintains **100% code coverage** across all metrics:
-
-- ✅ **Line Coverage**: 100% (12/12 lines)
-- ✅ **Branch Coverage**: 100% (4/4 branches)  
-- ✅ **Method Coverage**: 100% (2/2 methods)
-
-### Generating Coverage Reports
-
-Generate comprehensive coverage reports using the provided scripts:
-
-```bash
-# Full coverage report with HTML, Markdown (with Mermaid), XML, CSV formats
-./scripts/generate-coverage.sh
-
-# Quick coverage test
-./scripts/quick-coverage.sh
-
-# Using dotnet directly
-dotnet test --configuration Release /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura
-```
-
-**VS Code Users**: Use the Command Palette (`Ctrl+Shift+P`) and run:
-- `Tasks: Run Task` → `Generate Coverage Report`
-- `Tasks: Run Task` → `Quick Coverage Test`
-
-### 🌐 Online Coverage Reports
-
-View comprehensive coverage reports online at: **https://jahnog.github.io/NetSimpleLazyCache/**
-
-The GitHub Pages site includes:
-- 📊 **Interactive HTML Reports**: Line-by-line coverage analysis
-- 📈 **Visual Dashboards**: Coverage metrics and trends  
-- 📝 **Markdown Reports**: Text-based summaries
-- 🏆 **Coverage Badges**: Always up-to-date status indicators
-
-Reports are automatically updated on every push to the master branch.
-
-### 📁 Local Coverage Reports
-
-Coverage reports are generated in the `./coverage/` directory with multiple formats:
-- **HTML Report**: `./coverage/reports/html/index.html` (Interactive browser report)
-- **Markdown with Mermaid**: `./coverage/reports/markdown/Coverage_with_Mermaid.md` (Visual diagrams)
-- **GitHub Markdown**: `./coverage/reports/markdown/SummaryGithub.md` (GitHub-optimized)
-- **Standard Markdown**: `./coverage/reports/markdown/Summary.md` (Basic format)
-- **XML Summary**: `./coverage/reports/xml/Summary.xml`
-- **CSV Data**: `./coverage/reports/csv/Summary.csv`
-- **Badges**: `./coverage/reports/badges/` (SVG coverage badges)
-
-## Testing
-
-Run the comprehensive test suite:
+## Tests
 
 ```bash
 dotnet test --verbosity normal
 ```
 
-The test suite includes:
-- Basic functionality tests
-- Concurrency and race condition tests
-- Memory leak detection (using reflection)
-- Cache stampede prevention verification
-- Performance and stress testing
-- Edge case handling
+## Coverage
 
-## Project Structure
+Coverlet writes the Cobertura file. ReportGenerator 5.2.4, already referenced by the test project, writes the HTML report.
+
+```bash
+dotnet test --configuration Release \
+  /p:CollectCoverage=true \
+  /p:CoverletOutputFormat=cobertura \
+  /p:CoverletOutput=./coverage/results/coverage.cobertura.xml \
+  /p:Include="[SimpleLazyCache]*" \
+  /p:Exclude="[*.Tests]*"
+
+dotnet ~/.nuget/packages/reportgenerator/5.2.4/tools/net8.0/ReportGenerator.dll \
+  -reports:coverage/results/coverage.cobertura.xml \
+  -targetdir:coverage/reports/html \
+  -reporttypes:Html
+```
+
+Open `coverage/reports/html/index.html`. `./scripts/quick-coverage.sh` writes an OpenCover file under `coverage/quick/`.
+
+## Mutation testing
+
+The local tool is `dotnet-stryker` 5.0.0, declared in `dotnet-tools.json`. Restore it, then run Stryker from the test project. `--version` is the baseline label. This checkout stores that baseline under `feature/github-publish`.
+
+```bash
+dotnet tool restore
+cd test/SimpleLazyCache.Unit.Tests
+dotnet stryker \
+  --solution ../../NetSimpleLazyCache.sln \
+  --project SimpleLazyCache.csproj \
+  --reporter html \
+  --reporter json \
+  --reporter progress \
+  --with-baseline \
+  --version feature/github-publish \
+  --skip-version-check
+```
+
+The HTML report and the disk baseline are under `test/SimpleLazyCache.Unit.Tests/StrykerOutput/`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+## Project structure
 
 ```
-├── src/
-│   └── SimpleLazyCache/           # Main library
-│       └── SingleFactoryCaller.cs # Core implementation
-├── test/
-│   └── SimpleLazyCache.Unit.Tests/ # Comprehensive test suite
-├── scripts/
-│   ├── generate-coverage.sh       # Full coverage report generator
-│   ├── generate-coverage.ps1      # PowerShell version
-│   └── quick-coverage.sh          # Quick coverage test
-└── coverage/                      # Generated coverage reports (git-ignored)
+├── src/SimpleLazyCache/                 # Library (netstandard2.0)
+├── test/SimpleLazyCache.Unit.Tests/     # xUnit tests (net10.0)
+├── scripts/                             # Local coverage scripts
+├── LICENSE
+└── dotnet-tools.json                    # Local dotnet-stryker manifest
 ```
+
+`coverage/` and `StrykerOutput/` are gitignored.

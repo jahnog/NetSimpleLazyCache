@@ -33,6 +33,19 @@ public class SingleFactoryCallerArgumentTests
     }
 
     [Fact]
+    public async Task GetOrAddAsync_NullFactory_LeavesCallerUsable()
+    {
+        var expected = new TestData(1);
+
+        var exception = await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            _caller.GetOrAddAsync("key", null!));
+        var result = await _caller.GetOrAddAsync("key", () => Task.FromResult(expected));
+
+        Assert.Equal("valueFactory", exception.ParamName);
+        Assert.Same(expected, result);
+    }
+
+    [Fact]
     public async Task GetOrAddAsync_NullKeyAndNullFactory_ThrowsArgumentException()
     {
         var exception = await Assert.ThrowsAsync<ArgumentException>(() =>

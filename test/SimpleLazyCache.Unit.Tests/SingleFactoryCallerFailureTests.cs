@@ -48,6 +48,29 @@ public class SingleFactoryCallerFailureTests
     }
 
     [Fact]
+    public async Task GetOrAddAsync_NullTask_NextCallSucceeds()
+    {
+        var calls = 0;
+        var expected = new TestData(4);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _caller.GetOrAddAsync("key", () =>
+            {
+                calls++;
+                return null!;
+            }));
+        var result = await _caller.GetOrAddAsync("key", () =>
+        {
+            calls++;
+            return Task.FromResult(expected);
+        });
+
+        Assert.Equal("Value factory returned null task.", exception.Message);
+        Assert.Equal(2, calls);
+        Assert.Same(expected, result);
+    }
+
+    [Fact]
     public async Task GetOrAddAsync_NullResult_ReturnsNull()
     {
         var result = await _caller.GetOrAddAsync("key", () => Task.FromResult<TestData>(null!));
@@ -94,5 +117,27 @@ public class SingleFactoryCallerFailureTests
     {
         await Assert.ThrowsAsync<TaskCanceledException>(() =>
             _caller.GetOrAddAsync("key", () => Task.FromCanceled<TestData>(new CancellationToken(true))));
+    }
+
+    [Fact]
+    public async Task GetOrAddAsync_CanceledFactoryTask_NextCallSucceeds()
+    {
+        var calls = 0;
+        var expected = new TestData(5);
+
+        await Assert.ThrowsAsync<TaskCanceledException>(() =>
+            _caller.GetOrAddAsync("key", () =>
+            {
+                calls++;
+                return Task.FromCanceled<TestData>(new CancellationToken(true));
+            }));
+        var result = await _caller.GetOrAddAsync("key", () =>
+        {
+            calls++;
+            return Task.FromResult(expected);
+        });
+
+        Assert.Equal(2, calls);
+        Assert.Same(expected, result);
     }
 }
