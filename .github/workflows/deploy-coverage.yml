@@ -5,7 +5,7 @@ on:
     workflows: ["Code Coverage"]
     types:
       - completed
-    branches: [main]
+    branches: [master]
 
 permissions:
   contents: read
@@ -110,7 +110,7 @@ jobs:
                 </div>
                 
                 <div class="footer">
-                    <p>Reports generated automatically by GitHub Actions on every push to main branch.</p>
+                    <p>Reports generated automatically by GitHub Actions on every push to master branch.</p>
                     <p>Last updated: <span id="lastUpdate"></span></p>
                     <script>
                         document.getElementById('lastUpdate').textContent = new Date().toLocaleString();

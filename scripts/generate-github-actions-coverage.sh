@@ -117,7 +117,7 @@ cat > ./coverage/report/dashboard.html << 'EOF'
         </div>
         
         <div class="footer">
-            <p>Reports generated automatically by GitHub Actions on every push to main branch.</p>
+            <p>Reports generated automatically by GitHub Actions on every push to master branch.</p>
             <p>🌐 <strong>GitHub Pages</strong>: This dashboard is automatically deployed to GitHub Pages</p>
             <p>📥 <strong>Artifacts</strong>: Download full reports from GitHub Actions artifacts</p>
             <p>Last updated: <span id="lastUpdate"></span></p>

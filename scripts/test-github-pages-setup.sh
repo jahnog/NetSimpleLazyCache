@@ -105,7 +105,7 @@ cat > ./test-pages/index.html << 'EOF'
         </div>
         
         <div class="footer">
-            <p>Reports generated automatically by GitHub Actions on every push to main branch.</p>
+            <p>Reports generated automatically by GitHub Actions on every push to master branch.</p>
             <p>Last updated: <span id="lastUpdate"></span></p>
             <script>
                 document.getElementById('lastUpdate').textContent = new Date().toLocaleString();
@@ -133,7 +133,7 @@ echo "🚀 Next Steps:"
 echo "1. Push these changes to your repository"
 echo "2. Enable GitHub Pages in repository Settings → Pages"
 echo "3. Select 'GitHub Actions' as the source"
-echo "4. Push to main branch to trigger deployment"
+echo "4. Push to master branch to trigger deployment"
 echo ""
 echo "🌐 Your coverage reports will be available at:"
 echo "   https://jahnog.github.io/NetSimpleLazyCache/"

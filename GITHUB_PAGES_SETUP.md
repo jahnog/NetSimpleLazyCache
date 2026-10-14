@@ -4,7 +4,7 @@ This document explains how to access the coverage reports deployed to GitHub Pag
 
 ## 🌐 Online Coverage Reports
 
-The coverage reports are automatically deployed to GitHub Pages after each successful coverage workflow run on the main branch.
+The coverage reports are automatically deployed to GitHub Pages after each successful coverage workflow run on the master branch.
 
 ### Access URLs
 
@@ -50,7 +50,7 @@ The setup includes two workflows:
 ### 3. First Deployment
 
 After enabling GitHub Pages and pushing the workflows:
-1. Push to main branch
+1. Push to master branch
 2. Wait for coverage workflow to complete
 3. Pages deployment will trigger automatically
 4. Site will be available at your GitHub Pages URL
@@ -69,7 +69,7 @@ After enabling GitHub Pages and pushing the workflows:
 - **Search Functionality**: Find specific files or functions
 
 ### Automatic Updates
-- **Continuous Deployment**: Updates on every main branch push
+- **Continuous Deployment**: Updates on every master branch push
 - **Version History**: GitHub Pages maintains deployment history
 - **Fast Updates**: Reports available within minutes of code changes
 
@@ -104,7 +104,7 @@ The coverage workflow provides:
 ### Pages Not Deploying
 1. Check GitHub Pages is enabled in repository settings
 2. Verify workflows have proper permissions
-3. Ensure main branch protection allows GitHub Actions
+3. Ensure master branch protection allows GitHub Actions
 
 ### Reports Not Updating
 1. Check coverage workflow completed successfully

@@ -63,7 +63,7 @@ The GitHub Pages site includes:
 - 📝 **Markdown Reports**: Text-based summaries
 - 🏆 **Coverage Badges**: Always up-to-date status indicators
 
-Reports are automatically updated on every push to the main branch.
+Reports are automatically updated on every push to the master branch.
 
 ### 📁 Local Coverage Reports
 
