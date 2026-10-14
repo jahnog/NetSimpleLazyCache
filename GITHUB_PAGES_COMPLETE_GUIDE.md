@@ -9,8 +9,8 @@ The NetSimpleLazyCache project is now configured to automatically deploy coverag
 ### 1. **Automated Workflows**
 
 #### Coverage Workflow (`.github/workflows/coverage.yml`)
-- Runs on every push to `main` and `develop` branches
-- Runs on pull requests to `main`
+- Runs on every push to `master` and `develop` branches
+- Runs on pull requests to `master`
 - Generates comprehensive coverage reports
 - Updates coverage badges
 - Uploads artifacts for GitHub Pages deployment
@@ -59,10 +59,10 @@ Replace `jahnog` with your actual GitHub username in:
 2. **GITHUB_PAGES_SETUP.md** documentation
 3. Any other references to the GitHub Pages URL
 
-### Step 3: Push to Main Branch
+### Step 3: Push to Master Branch
 
 1. Commit all the workflow files
-2. Push to the `main` branch
+2. Push to the `master` branch
 3. GitHub Actions will automatically:
    - Run coverage analysis
    - Generate reports
@@ -79,7 +79,7 @@ Replace `jahnog` with your actual GitHub username in:
 ### 🌐 Online Dashboard
 - **URL**: `https://jahnog.github.io/[repo]/dashboard.html`
 - **Features**: Coverage overview, quick navigation, professional design
-- **Updates**: Automatically on every push to main
+- **Updates**: Automatically on every push to master
 
 ### 📈 Interactive HTML Report  
 - **URL**: `https://jahnog.github.io/[repo]/index.html`
@@ -139,7 +139,7 @@ xdg-open coverage/report/index.html  # Linux
 ✅ **Coverage Workflow**: Fixed and working  
 ✅ **Pages Deployment**: Configured and ready  
 ✅ **Report Generation**: Multiple formats supported  
-✅ **Badge Updates**: Automatic on main branch  
+✅ **Badge Updates**: Automatic on master branch  
 ✅ **Local Testing**: Comprehensive test scripts  
 ✅ **Documentation**: Complete setup guides  
 
