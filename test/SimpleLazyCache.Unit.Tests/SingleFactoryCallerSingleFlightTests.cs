@@ -148,6 +148,23 @@ public class SingleFactoryCallerSingleFlightTests
     }
 
     [Fact]
+    public async Task GetOrAddAsync_AlreadyCancelledToken_StillRunsBlockedFactory()
+    {
+        var held = BlockedFactory.Hold<TestData>();
+        var expected = new TestData(6);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var pending = _caller.GetOrAddAsync("key", held.Factory, cts.Token);
+
+        Assert.Equal(1, held.Calls);
+        held.Release.SetResult(expected);
+        var result = await pending;
+
+        Assert.Same(expected, result);
+    }
+
+    [Fact]
     public async Task GetOrAddAsync_OneWaiterCancels_OtherWaiterStillReceivesInstance()
     {
         var held = BlockedFactory.Hold<TestData>();
