@@ -63,4 +63,33 @@ public class SingleFactoryCallerArgumentTests
 
         Assert.Same(expected, result);
     }
+
+    [Fact]
+    public async Task GetOrAddAsync_RejectedKeyWhileAnotherCallIsInFlight_LeavesThatCallShared()
+    {
+        var held = BlockedFactory.Hold<TestData>();
+        var expected = new TestData(1);
+        var joinerCalls = 0;
+        var inFlight = _caller.GetOrAddAsync("key", held.Factory);
+
+        var rejected = await Assert.ThrowsAsync<ArgumentException>(() =>
+            _caller.GetOrAddAsync("", () => Task.FromResult(new TestData(2))));
+        var joiner = _caller.GetOrAddAsync("key", () =>
+        {
+            Interlocked.Increment(ref joinerCalls);
+            return Task.FromResult(new TestData(3));
+        });
+
+        Assert.Equal("key", rejected.ParamName);
+        Assert.Equal(1, held.Calls);
+        Assert.Equal(0, joinerCalls);
+
+        held.Release.SetResult(expected);
+        var results = await Task.WhenAll(inFlight, joiner);
+
+        Assert.Equal(1, held.Calls);
+        Assert.Equal(0, joinerCalls);
+        Assert.Same(expected, results[0]);
+        Assert.Same(expected, results[1]);
+    }
 }

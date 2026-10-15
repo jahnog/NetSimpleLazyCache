@@ -113,6 +113,35 @@ public class SingleFactoryCallerFailureTests
     }
 
     [Fact]
+    public async Task GetOrAddAsync_FailureOnOneKey_LeavesAnotherInFlightCallShared()
+    {
+        var held = BlockedFactory.Hold<TestData>();
+        var expected = new TestData(2);
+        var joinerCalls = 0;
+        var inFlight = _caller.GetOrAddAsync("good", held.Factory);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _caller.GetOrAddAsync("bad", () =>
+                Task.FromException<TestData>(new InvalidOperationException("bad key"))));
+        var joiner = _caller.GetOrAddAsync("good", () =>
+        {
+            Interlocked.Increment(ref joinerCalls);
+            return Task.FromResult(new TestData(3));
+        });
+
+        Assert.Equal(1, held.Calls);
+        Assert.Equal(0, joinerCalls);
+
+        held.Release.SetResult(expected);
+        var results = await Task.WhenAll(inFlight, joiner);
+
+        Assert.Equal(1, held.Calls);
+        Assert.Equal(0, joinerCalls);
+        Assert.Same(expected, results[0]);
+        Assert.Same(expected, results[1]);
+    }
+
+    [Fact]
     public async Task GetOrAddAsync_CanceledFactoryTask_ThrowsTaskCanceledException()
     {
         await Assert.ThrowsAsync<TaskCanceledException>(() =>
