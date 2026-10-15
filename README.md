@@ -118,7 +118,69 @@ var result = await cache.GetOrAddAsync("my-key", async () =>
 
 MIT. See [LICENSE](LICENSE).
 
-## Project structure
+- ✅ **Line Coverage**: 100% (12/12 lines)
+- ✅ **Branch Coverage**: 100% (4/4 branches)  
+- ✅ **Method Coverage**: 100% (2/2 methods)
+
+### Generating Coverage Reports
+
+Generate comprehensive coverage reports using the provided scripts:
+
+```bash
+# Full coverage report with HTML, Markdown (with Mermaid), XML, CSV formats
+./scripts/generate-coverage.sh
+
+# Quick coverage test
+./scripts/quick-coverage.sh
+
+# Using dotnet directly
+dotnet test --configuration Release /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura
+```
+
+**VS Code Users**: Use the Command Palette (`Ctrl+Shift+P`) and run:
+- `Tasks: Run Task` → `Generate Coverage Report`
+- `Tasks: Run Task` → `Quick Coverage Test`
+
+### 🌐 Online Coverage Reports
+
+View comprehensive coverage reports online at: **https://jahnog.github.io/NetSimpleLazyCache/**
+
+The GitHub Pages site includes:
+- 📊 **Interactive HTML Reports**: Line-by-line coverage analysis
+- 📈 **Visual Dashboards**: Coverage metrics and trends  
+- 📝 **Markdown Reports**: Text-based summaries
+- 🏆 **Coverage Badges**: Always up-to-date status indicators
+
+Reports are automatically updated on every push to the master branch.
+
+### 📁 Local Coverage Reports
+
+Coverage reports are generated in the `./coverage/` directory with multiple formats:
+- **HTML Report**: `./coverage/reports/html/index.html` (Interactive browser report)
+- **Markdown with Mermaid**: `./coverage/reports/markdown/Coverage_with_Mermaid.md` (Visual diagrams)
+- **GitHub Markdown**: `./coverage/reports/markdown/SummaryGithub.md` (GitHub-optimized)
+- **Standard Markdown**: `./coverage/reports/markdown/Summary.md` (Basic format)
+- **XML Summary**: `./coverage/reports/xml/Summary.xml`
+- **CSV Data**: `./coverage/reports/csv/Summary.csv`
+- **Badges**: `./coverage/reports/badges/` (SVG coverage badges)
+
+## Testing
+
+Run the comprehensive test suite:
+
+```bash
+dotnet test --verbosity normal
+```
+
+The test suite includes:
+- Basic functionality tests
+- Concurrency and race condition tests
+- Memory leak detection (using reflection)
+- Cache stampede prevention verification
+- Performance and stress testing
+- Edge case handling
+
+## Project Structure
 
 ```
 ├── src/SimpleLazyCache/
